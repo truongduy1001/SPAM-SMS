@@ -11,24 +11,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { serviceId, phone, proxyConfig } = req.body;
   
   if (!serviceId || !phone) {
-    return res.status(400).json({ error: 'Missing parameters' });
+    return res.status(400).json({ error: 'Thiếu tham số (phone hoặc serviceId)' });
   }
 
   const phoneClean = phone.replace(/\s+/g, '');
   const phoneWith84 = phoneClean.startsWith('0') ? '84' + phoneClean.substring(1) : phoneClean;
 
   let agent = null;
-  if (proxyConfig && proxyConfig.host && proxyConfig.port) {
+  if (proxyConfig && proxyConfig.host) {
     const { host, port, user, pass } = proxyConfig;
-    // Hỗ trợ cả http và https proxy
+    // Sử dụng định dạng chuẩn cho Proxy Auth
     const proxyUrl = user && pass 
       ? `http://${user}:${pass}@${host}:${port}`
       : `http://${host}:${port}`;
     
     try {
       agent = new HttpsProxyAgent(proxyUrl);
+      console.log(`[PROXY] Using: ${host}:${port}`);
     } catch (e) {
-      console.error("Agent creation failed");
+      console.error("[PROXY ERROR] Agent init failed:", e);
     }
   }
 
@@ -36,13 +37,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let url = '';
     let bodyData: any = {};
     let headers: any = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-      'Accept': 'application/json, text/plain, */*',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'application/json',
       'Content-Type': 'application/json',
-      'Origin': 'https://google.com',
-      'Referer': 'https://google.com/'
+      'Referer': 'https://google.com',
+      'Origin': 'https://google.com'
     };
 
+    // Định nghĩa các dịch vụ OTP (Cập nhật endpoint mới nhất)
     switch (serviceId) {
       case 'vexere':
         url = 'https://api.vexere.com/v1/user/otp';
@@ -51,7 +53,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case 'fptplay':
         url = 'https://api.fptplay.net/api/v7.1_w/user/otp/register_otp';
         bodyData = { phone: phoneClean };
-        headers['Origin'] = 'https://fptplay.vn';
         break;
       case 'ghn':
         url = 'https://sso.ghn.vn/v2/otp/send';
@@ -71,11 +72,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         break;
       default:
         url = 'https://api.vexere.com/v1/user/otp';
-        bodyData = { phone: phoneClean, type: 'register' };
+        bodyData = { phone: phoneClean };
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000); // 8s timeout cho proxy chậm
+    const timeout = setTimeout(() => controller.abort(), 15000); // 15s cho Proxy
 
     const response = await fetch(url, {
       method: 'POST',
@@ -86,27 +87,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     clearTimeout(timeout);
+    
     const status = response.status;
     const resText = await response.text();
+    let resJson = {};
+    try { resJson = JSON.parse(resText); } catch(e) {}
 
-    return res.status(200).json({ 
-      success: response.ok, 
-      status: status,
-      proxyUsed: !!agent,
-      message: response.ok ? "Yêu cầu đã được gửi" : `Dịch vụ từ chối (${status})`,
-      debug: resText.substring(0, 100)
-    });
+    if (response.ok) {
+      return res.status(200).json({ 
+        success: true, 
+        message: "Gửi thành công",
+        debug: resJson
+      });
+    } else {
+      return res.status(status).json({ 
+        success: false, 
+        message: `Dịch vụ từ chối (${status})`,
+        error: resText
+      });
+    }
 
   } catch (error: any) {
-    let errMsg = "Lỗi kết nối";
-    if (error.name === 'AbortError') errMsg = "Proxy quá chậm (Timeout)";
-    else if (error.code === 'ECONNREFUSED') errMsg = "Proxy từ chối kết nối";
-    else if (error.code === 'EPROTO') errMsg = "Sai giao thức Proxy";
+    let friendlyMessage = "Lỗi kết nối mạng";
     
+    if (error.name === 'AbortError') friendlyMessage = "Proxy quá chậm (Timeout 15s)";
+    else if (error.code === 'ECONNREFUSED') friendlyMessage = "Proxy chết hoặc sai Port";
+    else if (error.code === 'EPROTO') friendlyMessage = "Lỗi giao thức Proxy (Sai IP/Auth)";
+    else if (error.message.includes('407')) friendlyMessage = "Proxy sai Tài khoản/Mật khẩu";
+    
+    console.error(`[API ERROR] ${error.message}`);
+
     return res.status(200).json({ 
       success: false, 
-      error: error.message,
-      message: errMsg
+      message: friendlyMessage,
+      error: error.message
     });
   }
 }
