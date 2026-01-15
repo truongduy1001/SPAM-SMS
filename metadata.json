@@ -1,0 +1,5 @@
+{
+  "name": "OTP Security Dashboard",
+  "description": "A visual interface for testing OTP delivery across multiple service endpoints, featuring real-time logging and service status monitoring.",
+  "requestFramePermissions": []
+}
