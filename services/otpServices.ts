@@ -14,47 +14,25 @@ export const OTP_SERVICES: ServiceDefinition[] = [
 
 export const triggerOTP = async (serviceId: string, phone: string): Promise<{ success: boolean; response: string }> => {
   try {
-    let response;
-    // Chú ý: Các yêu cầu này hầu hết sẽ bị chặn bởi CORS trên môi trường Browser thuần túy.
-    // Cần một Backend Proxy (NodeJS/Python server) để thực sự vượt qua rào cản này.
-    switch (serviceId) {
-      case 'sapo':
-        response = await fetch('https://www.sapo.vn/fnb/sendotp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: `phone=${phone}`
-        });
-        break;
-      case 'viettel':
-        response = await fetch('https://viettel.vn/api/getOTPLoginCommon', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phoneNumber: phone, type: 1 })
-        });
-        break;
-      case 'fptplay':
-        response = await fetch('https://api.fptplay.net/api/v7.1_w/user/otp/register_otp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone: phone })
-        });
-        break;
-      default:
-        // Giả lập cho các dịch vụ khác nếu chưa có endpoint cụ thể
-        throw new Error("CORS_BLOCKED: Browser security policy prevented this request.");
-    }
+    // Gọi đến API Proxy trên Vercel
+    const response = await fetch('/api/send-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ serviceId, phone })
+    });
 
-    if (response && response.ok) {
+    const result = await response.json();
+
+    if (result.success) {
       return { success: true, response: "OK" };
     } else {
-      return { success: false, response: `Status: ${response?.status || 'Blocked'}` };
+      return { success: false, response: `Lỗi Server: ${result.status || 'Unknown'}` };
     }
-  } catch (error) {
-    // Trình duyệt sẽ nhảy vào đây vì lỗi CORS
-    console.error(`Error calling ${serviceId}:`, error);
+  } catch (error: any) {
+    console.error(`Error calling proxy for ${serviceId}:`, error);
     return { 
       success: false, 
-      response: "CORS Blocked: Cần chạy qua Backend để gửi SMS thật." 
+      response: "Network Error: Kiểm tra kết nối Internet hoặc Server API." 
     };
   }
 };

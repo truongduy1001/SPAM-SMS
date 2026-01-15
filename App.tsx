@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Zap, 
-  ShieldAlert, 
   Terminal, 
   Smartphone, 
   Activity, 
@@ -12,7 +11,7 @@ import {
   BarChart3,
   Play,
   Square,
-  AlertTriangle,
+  Globe,
   Info
 } from 'lucide-react';
 import { OTP_SERVICES, triggerOTP } from './services/otpServices';
@@ -33,7 +32,6 @@ const App: React.FC = () => {
     totalCycles: 0
   });
   const [geminiReport, setGeminiReport] = useState<string | null>(null);
-  const [showWarning, setShowWarning] = useState(true);
   
   const logEndRef = useRef<HTMLDivElement>(null);
 
@@ -59,12 +57,10 @@ const App: React.FC = () => {
     setStats(prev => ({ ...prev, totalSent: 0, successCount: 0, failureCount: 0, currentCycle: 1, totalCycles: cycles }));
     
     for (let c = 1; c <= cycles; c++) {
-      if (!isSpamming && c > 1) break; 
-      
       setStats(prev => ({ ...prev, currentCycle: c }));
-      addLog('SYSTEM', `Bắt đầu đợt ${c}/${cycles}`, 'info');
+      addLog('SYSTEM', `Bắt đầu đợt ${c}/${cycles} qua Vercel Proxy`, 'info');
 
-      const chunkSize = 5;
+      const chunkSize = 3; // Giới hạn chunk nhỏ để tránh timeout serverless
       for (let i = 0; i < services.length; i += chunkSize) {
         const chunk = services.slice(i, i + chunkSize);
         
@@ -77,22 +73,24 @@ const App: React.FC = () => {
           
           if (result.success) {
             setStats(prev => ({ ...prev, totalSent: prev.totalSent + 1, successCount: prev.successCount + 1 }));
-            addLog(svc.name, "Yêu cầu đã gửi thành công", 'success');
+            addLog(svc.name, "Yêu cầu Proxy thành công", 'success');
           } else {
             setStats(prev => ({ ...prev, totalSent: prev.totalSent + 1, failureCount: prev.failureCount + 1 }));
-            addLog(svc.name, `Thất bại: ${result.response}`, 'error');
+            addLog(svc.name, `Thất bại qua Proxy: ${result.response}`, 'error');
           }
         }));
+        // Delay nhỏ giữa các chunk
+        await new Promise(r => setTimeout(r, 1000));
       }
 
       if (c < cycles) {
-        addLog('SYSTEM', "Nghỉ 5 giây để tránh bị block IP...", 'warning');
-        await new Promise(r => setTimeout(r, 5000));
+        addLog('SYSTEM', "Nghỉ 10 giây để bảo vệ IP máy chủ...", 'warning');
+        await new Promise(r => setTimeout(r, 10000));
       }
     }
 
     setIsSpamming(false);
-    addLog('SYSTEM', "Hoàn tất quá trình thử nghiệm.", 'info');
+    addLog('SYSTEM', "Tiến trình hoàn tất.", 'info');
     const summary = await generateSessionSummary(logs);
     setGeminiReport(summary);
   };
@@ -104,201 +102,121 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen p-4 md:p-8 flex flex-col gap-6 max-w-7xl mx-auto">
-      {/* Warning Banner */}
-      {showWarning && (
-        <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-xl flex gap-4 items-start relative overflow-hidden group">
-          <div className="p-2 bg-amber-500/20 rounded-lg">
-            <AlertTriangle className="w-5 h-5 text-amber-500" />
-          </div>
-          <div className="flex-1">
-            <h3 className="text-amber-500 font-bold text-sm uppercase mb-1">Cảnh báo kỹ thuật: CORS Policy</h3>
-            <p className="text-xs text-amber-200/70 leading-relaxed">
-              Trình duyệt đang chặn các yêu cầu trực tiếp đến API của bên thứ ba để bảo mật. 
-              Để <strong>gửi SMS thật</strong>, bạn cần chạy mã này thông qua một máy chủ Backend (NodeJS/Python) hoặc tắt bảo mật CORS của trình duyệt (không khuyến khích).
-            </p>
-          </div>
-          <button onClick={() => setShowWarning(false)} className="text-amber-500/50 hover:text-amber-500 text-xs font-bold px-2 py-1">Đã hiểu</button>
+      {/* Status Banner */}
+      <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-xl flex gap-4 items-center">
+        <div className="p-2 bg-blue-500/20 rounded-lg">
+          <Globe className="w-5 h-5 text-blue-400" />
         </div>
-      )}
+        <div>
+          <h3 className="text-blue-400 font-bold text-xs uppercase">Vercel Deployment Mode</h3>
+          <p className="text-[10px] text-blue-200/60">Tất cả yêu cầu được thực hiện qua Serverless API để vượt qua CORS.</p>
+        </div>
+      </div>
 
-      {/* Header */}
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="p-3 bg-emerald-500/10 rounded-xl border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.1)]">
+          <div className="p-3 bg-emerald-500/10 rounded-xl border border-emerald-500/20">
             <Zap className="w-8 h-8 text-emerald-400" />
           </div>
           <div>
             <h1 className="text-2xl font-black tracking-tight text-white uppercase italic">
-              OTP <span className="text-emerald-400">Security Suite</span>
+              OTP <span className="text-emerald-400">Security Dashboard</span>
             </h1>
-            <p className="text-xs text-slate-400 font-medium tracking-widest uppercase">
-              Vulnerability Test Dashboard • v3.0.2
-            </p>
           </div>
         </div>
         
-        <div className="flex gap-4">
-          <div className="bg-slate-900/50 border border-slate-800 p-3 rounded-lg flex items-center gap-4">
-            <div className="flex flex-col">
-              <span className="text-[10px] text-slate-500 uppercase font-bold">Trạng thái</span>
-              <span className="text-sm mono text-amber-400">Sandbox Mode</span>
-            </div>
+        <div className="bg-slate-900/50 border border-slate-800 p-3 rounded-lg flex items-center gap-4">
+          <div className="flex flex-col">
+            <span className="text-[10px] text-slate-500 uppercase font-bold">Server Location</span>
+            <span className="text-sm mono text-emerald-400">Vercel Edge</span>
           </div>
         </div>
       </header>
 
-      {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1">
-        
-        {/* Control Panel */}
         <div className="lg:col-span-4 space-y-6">
-          <div className="bg-slate-900/40 border border-slate-800 p-6 rounded-2xl backdrop-blur-sm">
+          <div className="bg-slate-900/40 border border-slate-800 p-6 rounded-2xl">
             <h2 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
               <Smartphone className="w-5 h-5 text-emerald-400" />
-              Thông số mục tiêu
+              Cấu hình
             </h2>
-            
             <div className="space-y-4">
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5 ml-1">Số điện thoại nhận</label>
-                <div className="relative">
-                  <input 
-                    type="text" 
-                    value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value)}
-                    placeholder="Ví dụ: 0912345678"
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white placeholder:text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 transition-all mono"
-                  />
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                    <Smartphone className="w-4 h-4 text-slate-600" />
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5 ml-1">Số đợt gửi ({cycles})</label>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Số điện thoại</label>
                 <input 
-                  type="range" 
-                  min="1" 
-                  max="10" 
-                  value={cycles}
-                  onChange={(e) => setCycles(parseInt(e.target.value))}
-                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  type="text" 
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  placeholder="0912345678"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white mono"
                 />
               </div>
-
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Số đợt gửi ({cycles})</label>
+                <input 
+                  type="range" min="1" max="5" value={cycles}
+                  onChange={(e) => setCycles(parseInt(e.target.value))}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none accent-emerald-500"
+                />
+              </div>
               <div className="pt-4">
                 {isSpamming ? (
-                  <button 
-                    onClick={stopSpam}
-                    className="w-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-500 font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95"
-                  >
-                    <Square className="w-5 h-5 fill-current" />
-                    DỪNG TIẾN TRÌNH
-                  </button>
+                  <button onClick={stopSpam} className="w-full bg-red-500/10 border border-red-500/30 text-red-500 font-bold py-4 rounded-xl">DỪNG</button>
                 ) : (
-                  <button 
-                    onClick={runSpam}
-                    className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-4 rounded-xl flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all active:scale-95 uppercase tracking-wider"
-                  >
-                    <Play className="w-5 h-5 fill-current" />
-                    Bắt đầu TEST
-                  </button>
+                  <button onClick={runSpam} className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-4 rounded-xl shadow-[0_0_20px_rgba(16,185,129,0.3)]">BẮT ĐẦU</button>
                 )}
               </div>
             </div>
           </div>
 
           <div className="bg-slate-900/40 border border-slate-800 p-6 rounded-2xl">
-            <h2 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-emerald-400" />
-              Thống kê trực tiếp
-            </h2>
+            <h2 className="text-lg font-bold text-white mb-6 flex items-center gap-2 text-sm uppercase">Thống kê</h2>
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/50">
-                <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Tổng yêu cầu</span>
-                <span className="text-2xl font-black text-white mono">{stats.totalSent}</span>
+                <span className="text-[10px] text-slate-500 uppercase block">Thành công</span>
+                <span className="text-xl font-black text-emerald-400 mono">{stats.successCount}</span>
               </div>
               <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/50">
-                <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Thành công</span>
-                <span className="text-2xl font-black text-emerald-400 mono">{stats.successCount}</span>
-              </div>
-              <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/50">
-                <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Lỗi (CORS)</span>
-                <span className="text-2xl font-black text-red-400 mono">{stats.failureCount}</span>
-              </div>
-              <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800/50">
-                <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Đợt</span>
-                <span className="text-2xl font-black text-blue-400 mono">{stats.currentCycle}/{stats.totalCycles}</span>
+                <span className="text-[10px] text-slate-500 uppercase block">Thất bại</span>
+                <span className="text-xl font-black text-red-400 mono">{stats.failureCount}</span>
               </div>
             </div>
           </div>
-
+          
           {geminiReport && (
-            <div className="bg-emerald-500/10 border border-emerald-500/20 p-6 rounded-2xl animate-in fade-in duration-500">
-               <h2 className="text-sm font-bold text-emerald-400 mb-3 flex items-center gap-2 uppercase tracking-widest">
-                <Info className="w-4 h-4" />
-                Báo cáo từ AI
-              </h2>
-              <p className="text-xs text-emerald-100/80 leading-relaxed italic">
-                "{geminiReport}"
-              </p>
+            <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-2xl">
+              <h3 className="text-[10px] font-bold text-emerald-400 uppercase mb-2">AI Summary</h3>
+              <p className="text-[11px] text-emerald-100/70 italic leading-relaxed">{geminiReport}</p>
             </div>
           )}
         </div>
 
-        {/* Services & Logs */}
         <div className="lg:col-span-8 flex flex-col gap-6">
-          <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 flex-1 flex flex-col">
+          <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 flex-1">
             <h2 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
               <Activity className="w-5 h-5 text-emerald-400" />
-              Danh sách dịch vụ
+              Service Status
             </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 overflow-y-auto pr-2 custom-scrollbar">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {services.map(svc => (
-                <div 
-                  key={svc.id}
-                  className={`
-                    p-3 rounded-xl border transition-all duration-300 flex flex-col gap-2
-                    ${svc.status === 'Idle' ? 'bg-slate-950/30 border-slate-800/50 text-slate-500' : ''}
-                    ${svc.status === 'Pending' ? 'bg-blue-500/10 border-blue-500/30 text-blue-400' : ''}
-                    ${svc.status === 'Success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : ''}
-                    ${svc.status === 'Error' ? 'bg-red-500/10 border-red-500/30 text-red-400' : ''}
-                  `}
-                >
-                  <span className="text-[9px] font-black uppercase truncate">{svc.name}</span>
-                  {svc.status === 'Pending' && <RefreshCw className="w-3 h-3 animate-spin mx-auto" />}
-                  {svc.status === 'Success' && <CheckCircle2 className="w-4 h-4 text-emerald-500 mx-auto" />}
-                  {svc.status === 'Error' && <XCircle className="w-4 h-4 text-red-500 mx-auto" />}
-                  {svc.status === 'Idle' && <div className="w-4 h-4 bg-slate-800 rounded-full mx-auto" />}
+                <div key={svc.id} className={`p-3 rounded-xl border flex flex-col gap-1 ${svc.status === 'Idle' ? 'bg-slate-950/30 border-slate-800/50' : svc.status === 'Pending' ? 'border-blue-500/50 bg-blue-500/5' : svc.status === 'Success' ? 'border-emerald-500/50 bg-emerald-500/5' : 'border-red-500/50 bg-red-500/5'}`}>
+                  <span className="text-[8px] font-bold uppercase text-slate-400 truncate">{svc.name}</span>
+                  {svc.status === 'Pending' ? <RefreshCw className="w-3 h-3 animate-spin text-blue-400" /> : svc.status === 'Success' ? <CheckCircle2 className="w-3 h-3 text-emerald-400" /> : svc.status === 'Error' ? <XCircle className="w-3 h-3 text-red-400" /> : <div className="h-3" />}
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="bg-slate-950 border border-slate-800 rounded-2xl h-80 flex flex-col shadow-inner">
-            <div className="p-3 border-b border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Terminal className="w-4 h-4 text-emerald-400" />
-                <h2 className="text-[10px] font-bold text-white uppercase tracking-widest">Nhật ký hệ thống (Console)</h2>
-              </div>
+          <div className="bg-slate-950 border border-slate-800 rounded-2xl h-64 overflow-hidden flex flex-col">
+            <div className="p-3 border-b border-slate-800 flex items-center gap-2">
+              <Terminal className="w-3 h-3 text-emerald-400" />
+              <span className="text-[10px] font-bold text-white uppercase">Console Log</span>
             </div>
-            
             <div className="flex-1 overflow-y-auto p-4 space-y-1 mono text-[10px]">
-              {logs.length === 0 && (
-                <div className="text-slate-700 italic">Chờ khởi tạo...</div>
-              )}
               {logs.map(log => (
-                <div key={log.id} className="flex gap-2 border-l border-slate-800 pl-2 hover:bg-slate-900/30 transition-colors">
+                <div key={log.id} className="flex gap-2">
                   <span className="text-slate-600">[{log.timestamp}]</span>
-                  <span className={`font-bold ${
-                    log.type === 'success' ? 'text-emerald-500' : 
-                    log.type === 'error' ? 'text-red-500' : 
-                    log.type === 'warning' ? 'text-yellow-500' : 'text-blue-500'
-                  }`}>
-                    {log.service}:
-                  </span>
-                  <span className="text-slate-400">{log.message}</span>
+                  <span className={log.type === 'success' ? 'text-emerald-500' : log.type === 'error' ? 'text-red-500' : 'text-blue-500'}>{log.service}: {log.message}</span>
                 </div>
               ))}
               <div ref={logEndRef} />
@@ -306,17 +224,6 @@ const App: React.FC = () => {
           </div>
         </div>
       </div>
-
-      <footer className="mt-auto py-4 border-t border-slate-800/50 flex items-center justify-between text-[10px] text-slate-500 uppercase font-bold tracking-widest">
-        <span>Cơ chế bảo vệ CORS: Hoạt động</span>
-        <span>© 2024 OTP Security Dashboard</span>
-      </footer>
-
-      <style>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
-      `}</style>
     </div>
   );
 };
