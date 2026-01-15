@@ -21,3 +21,11 @@ export interface SpamStats {
   currentCycle: number;
   totalCycles: number;
 }
+
+export interface ProxyConfig {
+  host: string;
+  port: string;
+  user: string;
+  pass: string;
+  enabled: boolean;
+}

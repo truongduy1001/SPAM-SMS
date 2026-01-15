@@ -16,10 +16,12 @@
     "react-dom": "^19.0.0",
     "typescript": "^5.3.3",
     "vite": "^5.0.12",
-    "@vitejs/plugin-react": "^4.2.1"
+    "@vitejs/plugin-react": "^4.2.1",
+    "https-proxy-agent": "^7.0.4"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0"
+    "@types/react-dom": "^19.0.0",
+    "@types/node": "^20.11.0"
   }
 }

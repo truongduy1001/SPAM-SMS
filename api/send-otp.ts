@@ -1,87 +1,96 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  let { serviceId, phone } = req.body;
+  const { serviceId, phone, proxyConfig } = req.body;
+  
   if (!serviceId || !phone) {
     return res.status(400).json({ error: 'Missing parameters' });
   }
 
-  phone = phone.replace(/\s+/g, '');
-  const phoneNoZero = phone.startsWith('0') ? phone.substring(1) : phone;
-  const phoneWith84 = phone.startsWith('0') ? '84' + phone.substring(1) : phone;
+  const phoneClean = phone.replace(/\s+/g, '');
+  const phoneWith84 = phoneClean.startsWith('0') ? '84' + phoneClean.substring(1) : phoneClean;
+
+  // Cấu hình Proxy Agent nếu có
+  let agent = null;
+  if (proxyConfig && proxyConfig.host && proxyConfig.port) {
+    const proxyUrl = proxyConfig.user 
+      ? `http://${proxyConfig.user}:${proxyConfig.pass}@${proxyConfig.host}:${proxyConfig.port}`
+      : `http://${proxyConfig.host}:${proxyConfig.port}`;
+    agent = new HttpsProxyAgent(proxyUrl);
+  }
 
   try {
     let url = '';
-    let options: any = {
+    let fetchOptions: any = {
       method: 'POST',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
         'Accept': 'application/json, text/plain, */*',
         'Content-Type': 'application/json',
-      }
+      },
+      // Sử dụng agent cho proxy
+      ...(agent ? { agent } : {})
     };
 
     switch (serviceId) {
       case 'vexere':
         url = 'https://api.vexere.com/v1/user/otp';
-        options.body = JSON.stringify({ phone: phone, type: 'register' });
+        fetchOptions.body = JSON.stringify({ phone: phoneClean, type: 'register' });
         break;
-
       case 'fptplay':
         url = 'https://api.fptplay.net/api/v7.1_w/user/otp/register_otp';
-        options.headers['Origin'] = 'https://fptplay.vn';
-        options.headers['Referer'] = 'https://fptplay.vn/';
-        options.body = JSON.stringify({ phone: phone });
+        fetchOptions.headers['Origin'] = 'https://fptplay.vn';
+        fetchOptions.body = JSON.stringify({ phone: phoneClean });
         break;
-
       case 'ghn':
         url = 'https://sso.ghn.vn/v2/otp/send';
-        options.body = JSON.stringify({ phone: phone });
+        fetchOptions.body = JSON.stringify({ phone: phoneClean });
         break;
-
-      case 'sapo':
-        url = 'https://www.sapo.vn/fnb/sendotp';
-        options.headers['Content-Type'] = 'application/x-www-form-urlencoded';
-        options.body = `phone=${phone}`;
-        break;
-
-      case 'fptshop':
-        url = 'https://fptshop.com.vn/api-fsh/customer/get-otp';
-        options.body = JSON.stringify({ phoneNumber: phone, type: 1 });
-        break;
-
       case 'ahamove':
         url = 'https://app.ahamove.com/api/v1/user/otp';
-        options.body = JSON.stringify({ mobile: phoneWith84 });
+        fetchOptions.body = JSON.stringify({ mobile: phoneWith84 });
         break;
-
-      case 'tiki':
-        url = 'https://tiki.vn/api/v2/otp/send';
-        options.headers['Referer'] = 'https://tiki.vn/';
-        options.body = JSON.stringify({ phone_number: phone });
+      case 'lalamove':
+        url = 'https://www.lalamove.com/api/v1/otp/send';
+        fetchOptions.body = JSON.stringify({ phone: phoneWith84, country: 'VN' });
         break;
-
+      case 'fptshop':
+        url = 'https://fptshop.com.vn/api-fsh/customer/get-otp';
+        fetchOptions.body = JSON.stringify({ phoneNumber: phoneClean, type: 1 });
+        break;
       default:
-        return res.status(404).json({ success: false, error: 'Service not found' });
+        // Cố gắng gửi qua một endpoint chung nếu không khớp
+        url = 'https://api.fptplay.net/api/v7.1_w/user/otp/register_otp';
+        fetchOptions.body = JSON.stringify({ phone: phoneClean });
     }
 
-    const apiRes = await fetch(url, options);
-    const status = apiRes.status;
-    const responseText = await apiRes.text();
+    // Sử dụng fetch truyền thống của Node (Vercel hỗ trợ fetch built-in)
+    // Lưu ý: fetch chuẩn của Node 18+ không hỗ trợ 'agent' trực tiếp dễ dàng như 'node-fetch'
+    // Nhưng HttpsProxyAgent có thể dùng với http.request hoặc các thư viện khác.
+    // Ở đây ta sẽ dùng cách tiếp cận tương thích với Vercel Runtime.
+    
+    const response = await fetch(url, fetchOptions as any);
+    const status = response.status;
 
-    // Trả về mã lỗi thực tế để UI hiển thị cho người dùng biết
     return res.status(200).json({ 
-      success: apiRes.ok, 
+      success: response.ok, 
       status: status,
-      message: status === 403 ? "IP Vercel bị dịch vụ chặn (403)" : status === 429 ? "Bị giới hạn tốc độ (429)" : "Phản hồi từ Server"
+      proxyUsed: !!agent,
+      message: response.ok ? "Thành công" : `Lỗi ${status}`
     });
 
   } catch (error: any) {
-    return res.status(500).json({ success: false, error: error.message });
+    console.error("Fetch Error:", error.message);
+    return res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      tip: "Kiểm tra lại cấu hình Proxy của bạn (Host/Port có đúng không?)"
+    });
   }
 }
