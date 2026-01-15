@@ -7,15 +7,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   let { serviceId, phone } = req.body;
-
   if (!serviceId || !phone) {
     return res.status(400).json({ error: 'Missing parameters' });
   }
 
-  // Chuẩn hóa số điện thoại: Loại bỏ khoảng trắng
   phone = phone.replace(/\s+/g, '');
-  
-  // Một số dịch vụ cần bỏ số 0 đầu, một số cần giữ. Chúng ta sẽ xử lý theo từng case.
   const phoneNoZero = phone.startsWith('0') ? phone.substring(1) : phone;
   const phoneWith84 = phone.startsWith('0') ? '84' + phone.substring(1) : phone;
 
@@ -24,76 +20,68 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let options: any = {
       method: 'POST',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
         'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Content-Type': 'application/json',
       }
     };
 
     switch (serviceId) {
-      case 'sapo':
-        url = 'https://www.sapo.vn/fnb/sendotp';
-        options.headers['Content-Type'] = 'application/x-www-form-urlencoded';
-        options.headers['Origin'] = 'https://www.sapo.vn';
-        options.headers['Referer'] = 'https://www.sapo.vn/';
-        options.body = `phone=${phone}`;
-        break;
-
-      case 'viettel':
-        url = 'https://viettel.vn/api/getOTPLoginCommon';
-        options.headers['Content-Type'] = 'application/json';
-        options.headers['Origin'] = 'https://viettel.vn';
-        options.headers['Referer'] = 'https://viettel.vn/';
-        options.body = JSON.stringify({ phoneNumber: phone, type: 1 });
+      case 'vexere':
+        url = 'https://api.vexere.com/v1/user/otp';
+        options.body = JSON.stringify({ phone: phone, type: 'register' });
         break;
 
       case 'fptplay':
         url = 'https://api.fptplay.net/api/v7.1_w/user/otp/register_otp';
-        options.headers['Content-Type'] = 'application/json';
         options.headers['Origin'] = 'https://fptplay.vn';
         options.headers['Referer'] = 'https://fptplay.vn/';
         options.body = JSON.stringify({ phone: phone });
         break;
 
-      case 'tiki':
-        url = 'https://tiki.vn/api/v2/otp/send';
-        options.headers['Content-Type'] = 'application/json';
-        options.headers['Referer'] = 'https://tiki.vn/';
-        options.body = JSON.stringify({ phone_number: phone });
-        break;
-
       case 'ghn':
         url = 'https://sso.ghn.vn/v2/otp/send';
-        options.headers['Content-Type'] = 'application/json';
-        options.headers['Referer'] = 'https://sso.ghn.vn/';
         options.body = JSON.stringify({ phone: phone });
+        break;
+
+      case 'sapo':
+        url = 'https://www.sapo.vn/fnb/sendotp';
+        options.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+        options.body = `phone=${phone}`;
+        break;
+
+      case 'fptshop':
+        url = 'https://fptshop.com.vn/api-fsh/customer/get-otp';
+        options.body = JSON.stringify({ phoneNumber: phone, type: 1 });
         break;
 
       case 'ahamove':
         url = 'https://app.ahamove.com/api/v1/user/otp';
-        options.headers['Content-Type'] = 'application/json';
         options.body = JSON.stringify({ mobile: phoneWith84 });
         break;
 
+      case 'tiki':
+        url = 'https://tiki.vn/api/v2/otp/send';
+        options.headers['Referer'] = 'https://tiki.vn/';
+        options.body = JSON.stringify({ phone_number: phone });
+        break;
+
       default:
-        // Fallback thành công giả lập để UI không bị treo
-        return res.status(200).json({ success: true, message: 'Service not implemented yet but skipped gracefully' });
+        return res.status(404).json({ success: false, error: 'Service not found' });
     }
 
     const apiRes = await fetch(url, options);
-    const data = await apiRes.text();
+    const status = apiRes.status;
+    const responseText = await apiRes.text();
 
-    // Log sơ bộ kết quả để debug trên Vercel
-    console.log(`Service ${serviceId} returned: ${apiRes.status}`);
-
+    // Trả về mã lỗi thực tế để UI hiển thị cho người dùng biết
     return res.status(200).json({ 
       success: apiRes.ok, 
-      status: apiRes.status,
-      data: data.length > 100 ? data.substring(0, 100) + '...' : data 
+      status: status,
+      message: status === 403 ? "IP Vercel bị dịch vụ chặn (403)" : status === 429 ? "Bị giới hạn tốc độ (429)" : "Phản hồi từ Server"
     });
 
   } catch (error: any) {
-    console.error(`Proxy Error for ${serviceId}:`, error);
     return res.status(500).json({ success: false, error: error.message });
   }
 }

@@ -2,19 +2,17 @@
 import { ServiceDefinition } from '../types';
 
 export const OTP_SERVICES: ServiceDefinition[] = [
-  { id: 'sapo', name: 'Sapo OTP', category: 'Retail', status: 'Idle' },
-  { id: 'viettel', name: 'Viettel Login', category: 'Telco', status: 'Idle' },
+  { id: 'vexere', name: 'Vexere.com', category: 'Retail', status: 'Idle' },
   { id: 'fptplay', name: 'FPT Play', category: 'Media', status: 'Idle' },
-  { id: 'shopee', name: 'Shopee VN', category: 'Retail', status: 'Idle' },
-  { id: 'tiki', name: 'Tiki VN', category: 'Retail', status: 'Idle' },
-  { id: 'vnpay', name: 'VNPay', category: 'Finance', status: 'Idle' },
   { id: 'ghn', name: 'GHN Express', category: 'Retail', status: 'Idle' },
+  { id: 'sapo', name: 'Sapo.vn', category: 'Retail', status: 'Idle' },
+  { id: 'fptshop', name: 'FPT Shop', category: 'Retail', status: 'Idle' },
   { id: 'ahamove', name: 'Ahamove', category: 'Retail', status: 'Idle' },
+  { id: 'tiki', name: 'Tiki VN', category: 'Retail', status: 'Idle' },
 ];
 
 export const triggerOTP = async (serviceId: string, phone: string): Promise<{ success: boolean; response: string }> => {
   try {
-    // Gọi đến API Proxy trên Vercel
     const response = await fetch('/api/send-otp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -24,15 +22,14 @@ export const triggerOTP = async (serviceId: string, phone: string): Promise<{ su
     const result = await response.json();
 
     if (result.success) {
-      return { success: true, response: "OK" };
+      return { success: true, response: "Đã gửi yêu cầu" };
     } else {
-      return { success: false, response: `Lỗi Server: ${result.status || 'Unknown'}` };
+      return { success: false, response: result.message || `Lỗi ${result.status}` };
     }
   } catch (error: any) {
-    console.error(`Error calling proxy for ${serviceId}:`, error);
     return { 
       success: false, 
-      response: "Network Error: Kiểm tra kết nối Internet hoặc Server API." 
+      response: "Lỗi kết nối Proxy" 
     };
   }
 };
