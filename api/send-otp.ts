@@ -16,13 +16,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const phoneClean = phone.replace(/\s+/g, '');
   const phoneWith84 = phoneClean.startsWith('0') ? '84' + phoneClean.substring(1) : phoneClean;
 
-  // Cấu hình Proxy Agent nếu có
+  // Cấu hình Proxy Agent nếu có thông tin từ pool
   let agent = null;
   if (proxyConfig && proxyConfig.host && proxyConfig.port) {
-    const proxyUrl = proxyConfig.user 
-      ? `http://${proxyConfig.user}:${proxyConfig.pass}@${proxyConfig.host}:${proxyConfig.port}`
-      : `http://${proxyConfig.host}:${proxyConfig.port}`;
-    agent = new HttpsProxyAgent(proxyUrl);
+    const { host, port, user, pass } = proxyConfig;
+    const proxyUrl = user && pass 
+      ? `http://${user}:${pass}@${host}:${port}`
+      : `http://${host}:${port}`;
+    
+    try {
+      agent = new HttpsProxyAgent(proxyUrl);
+    } catch (e) {
+      console.error("Proxy Agent Init Error");
+    }
   }
 
   try {
@@ -30,14 +36,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let fetchOptions: any = {
       method: 'POST',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'application/json, text/plain, */*',
         'Content-Type': 'application/json',
+        'Referer': 'https://www.google.com/',
       },
-      // Sử dụng agent cho proxy
       ...(agent ? { agent } : {})
     };
 
+    // Mapping dịch vụ
     switch (serviceId) {
       case 'vexere':
         url = 'https://api.vexere.com/v1/user/otp';
@@ -65,16 +72,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         fetchOptions.body = JSON.stringify({ phoneNumber: phoneClean, type: 1 });
         break;
       default:
-        // Cố gắng gửi qua một endpoint chung nếu không khớp
-        url = 'https://api.fptplay.net/api/v7.1_w/user/otp/register_otp';
-        fetchOptions.body = JSON.stringify({ phone: phoneClean });
+        url = 'https://api.vexere.com/v1/user/otp';
+        fetchOptions.body = JSON.stringify({ phone: phoneClean, type: 'register' });
     }
 
-    // Sử dụng fetch truyền thống của Node (Vercel hỗ trợ fetch built-in)
-    // Lưu ý: fetch chuẩn của Node 18+ không hỗ trợ 'agent' trực tiếp dễ dàng như 'node-fetch'
-    // Nhưng HttpsProxyAgent có thể dùng với http.request hoặc các thư viện khác.
-    // Ở đây ta sẽ dùng cách tiếp cận tương thích với Vercel Runtime.
-    
     const response = await fetch(url, fetchOptions as any);
     const status = response.status;
 
@@ -82,15 +83,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: response.ok, 
       status: status,
       proxyUsed: !!agent,
-      message: response.ok ? "Thành công" : `Lỗi ${status}`
+      message: response.ok ? "Success" : `Failed (${status})`
     });
 
   } catch (error: any) {
-    console.error("Fetch Error:", error.message);
     return res.status(500).json({ 
       success: false, 
       error: error.message,
-      tip: "Kiểm tra lại cấu hình Proxy của bạn (Host/Port có đúng không?)"
+      message: "Proxy connection timeout or refused"
     });
   }
 }

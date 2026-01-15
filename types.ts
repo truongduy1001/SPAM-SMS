@@ -22,10 +22,15 @@ export interface SpamStats {
   totalCycles: number;
 }
 
-export interface ProxyConfig {
+export interface ProxyItem {
   host: string;
   port: string;
-  user: string;
-  pass: string;
+  user?: string;
+  pass?: string;
+}
+
+export interface ProxyConfig {
+  rawList: string;
+  pool: ProxyItem[];
   enabled: boolean;
 }
